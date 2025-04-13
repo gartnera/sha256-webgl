@@ -93,9 +93,16 @@ async function run() {
     const program = await initShaderProgram();
     setupGeometry(program);
 
-    const testString = "Hello, World!";
-    const encoder = new TextEncoder();
-    const data = encoder.encode(testString);
+    // Generate random data length (between 1 and 55 bytes to fit in single block)
+    const initialLength = Math.floor(Math.random() * 55) + 1;
+
+    // Generate random initial data
+    const initialData = new Uint8Array(initialLength);
+    crypto.getRandomValues(initialData);
+
+    // Hash the initial data
+    const hashedBuffer = await crypto.subtle.digest('SHA-256', initialData);
+    const data = new Uint8Array(hashedBuffer);  // Always 32 bytes (256 bits)
 
     // Prepare padded data block (512 bits / 64 bytes)
     const paddedData = new Uint8Array(64);
@@ -123,6 +130,9 @@ async function run() {
     const renderComplete = await render(program, dataWords, expectedHash);
     if (renderComplete) {
         console.log('Rendering completed successfully');
+        console.log('Initial data (hex):', Array.from(initialData).map(b => b.toString(16).padStart(2, '0')).join(''));
+        console.log('Input data (hex):', Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''));
+        console.log('Expected hash (hex):', Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join(''));
     } else {
         console.warn('Rendering may not have completed');
     }
