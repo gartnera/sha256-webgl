@@ -30,7 +30,7 @@ uint rightRotate(uint x, uint n) {
     return (x >> n) | (x << (32u - n));
 }
 
-void main() {
+void computeHash(uint messageData[16], out uint result[8]) {
     uint w[64];
     uint a = 0x6a09e667u;
     uint b = 0xbb67ae85u;
@@ -42,7 +42,7 @@ void main() {
     uint h = 0x5be0cd19u;
 
     for(int i = 0; i < 16; i++) {
-        w[i] = data[i];
+        w[i] = messageData[i];
     }
 
     for(int i = 16; i < 64; i++) {
@@ -69,15 +69,19 @@ void main() {
         a = temp1 + temp2;
     }
 
+    result[0] = a + 0x6a09e667u;
+    result[1] = b + 0xbb67ae85u;
+    result[2] = c + 0x3c6ef372u;
+    result[3] = d + 0xa54ff53au;
+    result[4] = e + 0x510e527fu;
+    result[5] = f + 0x9b05688cu;
+    result[6] = g + 0x1f83d9abu;
+    result[7] = h + 0x5be0cd19u;
+}
+
+void main() {
     uint hash[8];
-    hash[0] = a + 0x6a09e667u;
-    hash[1] = b + 0xbb67ae85u;
-    hash[2] = c + 0x3c6ef372u;
-    hash[3] = d + 0xa54ff53au;
-    hash[4] = e + 0x510e527fu;
-    hash[5] = f + 0x9b05688cu;
-    hash[6] = g + 0x1f83d9abu;
-    hash[7] = h + 0x5be0cd19u;
+    computeHash(data, hash);
 
     bool matches = true;
     for(int i = 0; i < 8; i++) {

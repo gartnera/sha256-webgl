@@ -71,7 +71,7 @@ function setupGeometry(program) {
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 }
 
-function render(program, data, expected) {
+async function render(program, data, expected) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -79,6 +79,13 @@ function render(program, data, expected) {
     gl.useProgram(program);
     setUniforms(program, data, expected);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.flush();
+
+    // Wait for two animation frames to ensure rendering is complete
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+
+    return true;
 }
 
 async function run() {
@@ -113,6 +120,11 @@ async function run() {
         expectedHash[i] = hashView.getUint32(i * 4, false);
     }
 
-    render(program, dataWords, expectedHash);
+    const renderComplete = await render(program, dataWords, expectedHash);
+    if (renderComplete) {
+        console.log('Rendering completed successfully');
+    } else {
+        console.warn('Rendering may not have completed');
+    }
 }
 run();
