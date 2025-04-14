@@ -4,6 +4,7 @@ precision highp int;
 
 uniform uint data[16];
 uniform uint expected[8];
+uniform uint nonce;
 
 out vec4 fragColor;
 
@@ -44,6 +45,8 @@ void computeHash(uint messageData[16], out uint result[8]) {
     for(int i = 0; i < 16; i++) {
         w[i] = messageData[i];
     }
+
+    w[8] = uint(nonce);
 
     for(int i = 16; i < 64; i++) {
         uint s0 = rightRotate(w[i-15], 7u) ^ rightRotate(w[i-15], 18u) ^ (w[i-15] >> 3u);

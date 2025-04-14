@@ -46,12 +46,15 @@ async function initShaderProgram() {
 
     return program;
 }
-function setUniforms(program, data, expected) {
+
+function setUniforms(program, data, expected, nonce) {
     const dataLoc = gl.getUniformLocation(program, 'data');
     const expectedLoc = gl.getUniformLocation(program, 'expected');
+    const nonceLoc = gl.getUniformLocation(program, 'nonce');
 
     gl.uniform1uiv(dataLoc, data);
     gl.uniform1uiv(expectedLoc, expected);
+    gl.uniform1ui(nonceLoc, nonce);
 }
 
 function setupGeometry(program) {
@@ -71,13 +74,13 @@ function setupGeometry(program) {
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 }
 
-async function render(program, data, expected) {
+async function render(program, data, expected, nonce) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
 
     gl.useProgram(program);
-    setUniforms(program, data, expected);
+    setUniforms(program, data, expected, nonce);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.flush();
 
@@ -104,14 +107,17 @@ async function run() {
     const hashedBuffer = await crypto.subtle.digest('SHA-256', initialData);
     const data = new Uint8Array(hashedBuffer);  // Always 32 bytes (256 bits)
 
+    let nonce = Math.floor(Math.random() * 100000);
+    console.log("random nonce", nonce)
+
     // Prepare padded data block (512 bits / 64 bytes)
     const paddedData = new Uint8Array(64);
     paddedData.set(data);
-    paddedData[data.length] = 0x80;
+    paddedData[data.length + 4] = 0x80;
 
     // Set message length at the end (in bits)
     const dataView = new DataView(paddedData.buffer);
-    dataView.setUint32(60, data.length * 8, false);
+    dataView.setUint32(60, data.length * 8 + 4*8, false);
 
     // Convert to 32-bit words
     const dataWords = new Uint32Array(16);
@@ -119,19 +125,26 @@ async function run() {
         dataWords[i] = dataView.getUint32(i * 4, false);
     }
 
+    // Create a new array with data and nonce
+    const dataWithNonce = new Uint8Array(data.length + 4);
+    dataWithNonce.set(data);
+    const nonceView = new DataView(dataWithNonce.buffer);
+    nonceView.setUint32(data.length, nonce, false);
+
     // Get expected hash
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataWithNonce);
     const expectedHash = new Uint32Array(8);
     const hashView = new DataView(hashBuffer);
     for (let i = 0; i < 8; i++) {
         expectedHash[i] = hashView.getUint32(i * 4, false);
     }
 
-    const renderComplete = await render(program, dataWords, expectedHash);
+    const renderComplete = await render(program, dataWords, expectedHash, nonce);
     if (renderComplete) {
         console.log('Rendering completed successfully');
         console.log('Initial data (hex):', Array.from(initialData).map(b => b.toString(16).padStart(2, '0')).join(''));
         console.log('Input data (hex):', Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''));
+        console.log('Data with nonce (hex):', Array.from(dataWithNonce).map(b => b.toString(16).padStart(2, '0')).join(''));
         console.log('Expected hash (hex):', Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join(''));
     } else {
         console.warn('Rendering may not have completed');
