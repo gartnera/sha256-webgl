@@ -24,6 +24,12 @@
             color: red;
             display: none;
         }
+        .explanation {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
     </style>
     <h1>WebGL SHA256 Proof of Work Demo</h1>
     <label for="inputData">Input Data:</label>
@@ -47,6 +53,19 @@
   
     <label for="finalHash">Final Hash:</label>
     <input type="text" id="finalHash" readonly>
+
+    <div class="explanation">
+        <h2>How it Works</h2>
+        <p>This demo implements SHA256 Proof of Work using WebGL2:</p>
+        <ol>
+            <li>The input text is first hashed using SHA256</li>
+            <li>The hash is combined with an incrementing nonce value</li>
+            <li>This combined data is hashed again using SHA256</li>
+            <li>The shader checks if the resulting hash has the required number of leading zeros (difficulty)</li>
+            <li>This process repeats until a matching nonce is found</li>
+        </ol>
+        <p>The calculation is performed on the GPU using a fragment shader, allowing for parallel processing of multiple nonce values. The difficulty parameter determines how many leading zeros are required in the final hash - higher values require more computation time.</p>
+    </div>
 </head>
 <body>
     <canvas id="sha256-canvas"></canvas>
