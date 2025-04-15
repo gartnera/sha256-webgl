@@ -3,10 +3,11 @@ precision highp float;
 precision highp int;
 
 uniform uint data[16];
-uniform uint expected[8];
-uniform uint nonce;
+uniform uint difficulty;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out int nonce;
+layout(location = 2) out uint hash0;
 
 uint k[64] = uint[](
     0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u,
@@ -31,7 +32,7 @@ uint rightRotate(uint x, uint n) {
     return (x >> n) | (x << (32u - n));
 }
 
-void computeHash(uint messageData[16], out uint result[8]) {
+void computeHash(uint messageData[16], out uint result[8], int messageNonce) {
     uint w[64];
     uint a = 0x6a09e667u;
     uint b = 0xbb67ae85u;
@@ -46,7 +47,7 @@ void computeHash(uint messageData[16], out uint result[8]) {
         w[i] = messageData[i];
     }
 
-    w[8] = uint(nonce);
+    w[8] = uint(messageNonce);
 
     for(int i = 16; i < 64; i++) {
         uint s0 = rightRotate(w[i-15], 7u) ^ rightRotate(w[i-15], 18u) ^ (w[i-15] >> 3u);
@@ -84,12 +85,28 @@ void computeHash(uint messageData[16], out uint result[8]) {
 
 void main() {
     uint hash[8];
-    computeHash(data, hash);
+    nonce = -1;
+    // TODO: allow setting from JS
+    int baseNonce = 0;
+    bool matches = false;
 
-    bool matches = true;
-    for(int i = 0; i < 8; i++) {
-        if(hash[i] != expected[i]) {
-            matches = false;
+    for (int i = baseNonce; i < (baseNonce + 1000000000); i++) {
+        computeHash(data, hash, i);
+
+        bool leadingZeros = true;
+        for (uint d = 0u; d < difficulty; ++d) {
+            uint shiftAmount = 28u - d * 4u;
+            uint nibble = (hash[0] >> shiftAmount) & 0xFu;
+            if (nibble != 0u) {
+                leadingZeros = false;
+                break;
+            }
+        }
+
+        if (leadingZeros) {
+            nonce = i;
+            matches = true;
+            hash0 = hash[0];
             break;
         }
     }

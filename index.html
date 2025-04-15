@@ -3,9 +3,50 @@
 <head>
     <title>SHA256 webgl demo</title>
     <style>
-        body { margin: 0; overflow: hidden; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            max-width: 900px;
+            margin: 0 auto;
+        }
         canvas { display: block; }
+        label, .button-box {
+            display: block;
+            margin-top: 5px;
+        }
+        input {
+            width: 100%;
+        }
+        input[readonly] { 
+            background-color: #eee; 
+        }
+        #error {
+            color: red;
+            display: none;
+        }
     </style>
+    <h1>WebGL SHA256 Proof of Work Demo</h1>
+    <label for="inputData">Input Data:</label>
+    <input type="text" id="inputData">
+  
+    <label for="difficulty">Difficulty (positive integer):</label>
+    <input type="number" id="difficulty" min="1" value="2" max="6">
+  
+    <div class="button-box">
+        <button id="calculate">Calculate</button>
+        <button id="calculate-random">Calculate Random</button>
+    </div>
+
+    <p id="error">Error</p>
+  
+    <label for="inputHash">Input Data Hash:</label>
+    <input type="text" id="inputHash" readonly>
+  
+    <label for="nonce">Calculated Nonce:</label>
+    <input type="text" id="nonce" readonly>
+  
+    <label for="finalHash">Final Hash:</label>
+    <input type="text" id="finalHash" readonly>
 </head>
 <body>
     <canvas id="sha256-canvas"></canvas>

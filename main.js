@@ -47,14 +47,11 @@ async function initShaderProgram() {
     return program;
 }
 
-function setUniforms(program, data, expected, nonce) {
+function setUniforms(program, data, difficulty) {
     const dataLoc = gl.getUniformLocation(program, 'data');
-    const expectedLoc = gl.getUniformLocation(program, 'expected');
-    const nonceLoc = gl.getUniformLocation(program, 'nonce');
-
+    const difficultyLoc = gl.getUniformLocation(program, 'difficulty');
     gl.uniform1uiv(dataLoc, data);
-    gl.uniform1uiv(expectedLoc, expected);
-    gl.uniform1ui(nonceLoc, nonce);
+    gl.uniform1ui(difficultyLoc, difficulty)
 }
 
 function setupGeometry(program) {
@@ -74,80 +71,136 @@ function setupGeometry(program) {
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 }
 
-async function render(program, data, expected, nonce) {
+async function render(program, data, difficulty) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
 
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+    const nonceTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, nonceTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32I, 1, 1, 0, gl.RED_INTEGER, gl.INT, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, nonceTexture, 0);
+
+    const hash0Texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, hash0Texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, null);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, hash0Texture, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+
     gl.useProgram(program);
-    setUniforms(program, data, expected, nonce);
+    setUniforms(program, data, difficulty);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.flush();
 
-    // Wait for two animation frames to ensure rendering is complete
-    await new Promise(requestAnimationFrame);
-    await new Promise(requestAnimationFrame);
+    const nonce = new Int32Array(1);
+    gl.readBuffer(gl.COLOR_ATTACHMENT1);
+    gl.readPixels(0, 0, 1, 1, gl.RED_INTEGER, gl.INT, nonce);
 
-    return true;
+    const hash0 = new Uint32Array(1);
+    gl.readBuffer(gl.COLOR_ATTACHMENT2);
+    gl.readPixels(0, 0, 1, 1, gl.RED_INTEGER, gl.UNSIGNED_INT, hash0);
+
+    gl.deleteFramebuffer(fb);
+    gl.deleteTexture(nonceTexture);
+    gl.deleteTexture(hash0Texture);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    return { nonce: nonce[0], hash0: hash0[0] };
 }
 
-async function run() {
+function uint32hex(number) {
+    return number.toString(16).padStart(8, '0');
+}
+
+// WARN: difficulty > 6 is broken right now, the gpu hash will mismatch the cpu hash. might be a nonce encoding issue.
+async function run(inputData, difficulty) {
+    const startTime = performance.now();
+
     document.body.appendChild(canvas);
     const program = await initShaderProgram();
     setupGeometry(program);
 
-    // Generate random data length (between 1 and 55 bytes to fit in single block)
-    const initialLength = Math.floor(Math.random() * 55) + 1;
+    const encoder = new TextEncoder();
+    const inputBuffer = encoder.encode(inputData);
+    const hashedBuffer = await crypto.subtle.digest('SHA-256', inputBuffer);
+    const data = new Uint8Array(hashedBuffer);
 
-    // Generate random initial data
-    const initialData = new Uint8Array(initialLength);
-    crypto.getRandomValues(initialData);
-
-    // Hash the initial data
-    const hashedBuffer = await crypto.subtle.digest('SHA-256', initialData);
-    const data = new Uint8Array(hashedBuffer);  // Always 32 bytes (256 bits)
-
-    let nonce = Math.floor(Math.random() * 100000);
-    console.log("random nonce", nonce)
-
-    // Prepare padded data block (512 bits / 64 bytes)
     const paddedData = new Uint8Array(64);
     paddedData.set(data);
     paddedData[data.length + 4] = 0x80;
 
-    // Set message length at the end (in bits)
     const dataView = new DataView(paddedData.buffer);
-    dataView.setUint32(60, data.length * 8 + 4*8, false);
+    dataView.setUint32(60, data.length * 8 + 4 * 8, false);
 
-    // Convert to 32-bit words
     const dataWords = new Uint32Array(16);
     for (let i = 0; i < 16; i++) {
         dataWords[i] = dataView.getUint32(i * 4, false);
     }
 
-    // Create a new array with data and nonce
-    const dataWithNonce = new Uint8Array(data.length + 4);
-    dataWithNonce.set(data);
-    const nonceView = new DataView(dataWithNonce.buffer);
-    nonceView.setUint32(data.length, nonce, false);
+    const result = await render(program, dataWords, difficulty);
+    let hash0Hex = uint32hex(result.hash0)
 
-    // Get expected hash
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataWithNonce);
-    const expectedHash = new Uint32Array(8);
-    const hashView = new DataView(hashBuffer);
-    for (let i = 0; i < 8; i++) {
-        expectedHash[i] = hashView.getUint32(i * 4, false);
-    }
+    if (result.nonce >= 0) {
+        const dataWithNonce = new Uint8Array(data.length + 4);
+        dataWithNonce.set(data);
+        const nonceView = new DataView(dataWithNonce.buffer);
+        nonceView.setUint32(data.length, result.nonce, false);
 
-    const renderComplete = await render(program, dataWords, expectedHash, nonce);
-    if (renderComplete) {
-        console.log('Rendering completed successfully');
-        console.log('Initial data (hex):', Array.from(initialData).map(b => b.toString(16).padStart(2, '0')).join(''));
-        console.log('Input data (hex):', Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''));
-        console.log('Data with nonce (hex):', Array.from(dataWithNonce).map(b => b.toString(16).padStart(2, '0')).join(''));
-        console.log('Expected hash (hex):', Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join(''));
+        const finalHash = await crypto.subtle.digest('SHA-256', dataWithNonce);
+        const hashHexString = Array.from(new Uint8Array(finalHash)).map(b => b.toString(16).padStart(2, '0')).join('')
+        const cpuHash0Hex = hashHexString.slice(0, 8);
+
+        if (hash0Hex !== cpuHash0Hex) {
+            throw new Error(`Hash mismatch: GPU hash0 ${hash0Hex} !== CPU hash0 ${cpuHash0Hex}`);
+        }
+        const endTime = performance.now();
+    
+        return {
+            inputHash: Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''),
+            hash: hashHexString,
+            nonce: result.nonce,
+            duration: startTime - endTime,
+        }
     } else {
-        console.warn('Rendering may not have completed');
+        return {
+            nonce: result.nonce,
+        }
     }
 }
-run();
+
+const inputDataEl = document.getElementById("inputData");
+const difficultyEl = document.getElementById("difficulty");
+const errorEl = document.getElementById("error");
+const inputHashEl = document.getElementById("inputHash");
+const finalHashEl = document.getElementById("finalHash");
+const nonceEl = document.getElementById("nonce");
+
+function setRandomInput() {
+    inputDataEl.value = Math.random().toString(36).substring(2, 10);
+}
+
+async function handleCalculateClick(ev) {
+    document.querySelectorAll("button").forEach((btn) => btn.disabled = true);
+    const inputData = inputDataEl.value;
+    const difficulty = parseInt(difficultyEl.value);
+    errorEl.style.display = "none";
+    try {
+        const res = await run(inputData, difficulty);
+        inputHashEl.value = res.inputHash;
+        finalHashEl.value = res.hash;
+        nonceEl.value = res.nonce;
+    } catch (e) {
+        errorEl.style.display = "block";
+        errorEl.innerText = e;
+    }
+    document.querySelectorAll("button").forEach((btn) => btn.disabled = false);
+}
+
+document.getElementById("calculate").addEventListener("click", handleCalculateClick);
+document.getElementById("calculate-random").addEventListener("click", async () => {
+    setRandomInput();
+    await handleCalculateClick();
+});
