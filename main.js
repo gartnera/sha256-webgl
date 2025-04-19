@@ -131,15 +131,27 @@ async function render(program, data, difficulty, baseNonce) {
     gl.flush();
 
     // Read results from all pixels
+    // gl.RED_INTEGER is not supported on firefox, so just read the full gl.RGBA_INTEGER
     const nonces = new Int32Array(GRID_SIZE * GRID_SIZE);
     gl.readBuffer(gl.COLOR_ATTACHMENT1);
-    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RED_INTEGER, gl.INT, nonces);
+
+    const tempNonces = new Int32Array(GRID_SIZE * GRID_SIZE * 4);
+    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RGBA_INTEGER, gl.INT, tempNonces);
+    // Extract only the R component
+    for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+        nonces[i] = tempNonces[i * 4];
+    }
 
     const hashes = new Uint32Array(GRID_SIZE * GRID_SIZE);
     gl.readBuffer(gl.COLOR_ATTACHMENT2);
-    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RED_INTEGER, gl.UNSIGNED_INT, hashes);
 
-    // Find the first successful result
+    const tempHashes = new Uint32Array(GRID_SIZE * GRID_SIZE * 4);
+    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RGBA_INTEGER, gl.UNSIGNED_INT, tempHashes);
+    for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+        hashes[i] = tempHashes[i * 4];
+    }
+
+    // Find the first successful result`
     let foundNonce = -1;
     let foundHash = 0;
     for (let i = 0; i < nonces.length; i++) {
