@@ -74,8 +74,8 @@ function setupGeometry(program) {
 }
 
 async function render(program, data, difficulty, baseNonce) {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    canvas.width = 1;
+    canvas.height = 1;
     gl.viewport(0, 0, canvas.width, canvas.height);
 
     const fb = gl.createFramebuffer();
