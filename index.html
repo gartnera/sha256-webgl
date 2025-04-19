@@ -74,7 +74,7 @@
 
     <div class="explanation">
         <h2>How it Works</h2>
-        <p>This demo implements SHA256 Proof of Work using WebGL2:</p>
+        <p>This demo implements SHA256 Proof of Work using WebGL2. The basic process looks like this:</p>
         <ol>
             <li>The input text is first hashed using SHA256</li>
             <li>The hash is combined with an incrementing nonce value</li>
@@ -82,9 +82,14 @@
             <li>The shader checks if the resulting hash has the required number of leading zeros (difficulty)</li>
             <li>This process repeats until a matching nonce is found</li>
         </ol>
+        <p>The difficulty parameter determines how many leading zeros are required in the final hash - higher values
+            require more computation time. Once a nonce is found, the server only has to execute one round of SHA256 to
+            validate the proof is valid.</p>
         <p>The calculation is performed on the GPU using a fragment shader, allowing for parallel processing of multiple
-            nonce values. The difficulty parameter determines how many leading zeros are required in the final hash -
-            higher values require more computation time.</p>
+            nonce values. We use the canvas/viewport size and pixel coordinates to parallelize the computation.</p>
+        <p><strong>Note:</strong> This implementation is a bit fragile on macOS and iOS which seem to require much lower
+            parallelism. If you use the GPU too much on those platforms, your whole domain will be prevented from
+            running WebGL programs until the browser restarts.</p>
     </div>
     <canvas id="sha256-canvas"></canvas>
     <script type="module" src="/main.js"></script>
