@@ -4,6 +4,7 @@ precision highp int;
 
 uniform uint data[16];
 uniform uint difficulty;
+uniform int baseNonce;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out int nonce;
@@ -86,11 +87,9 @@ void computeHash(uint messageData[16], out uint result[8], int messageNonce) {
 void main() {
     uint hash[8];
     nonce = -1;
-    // TODO: allow setting from JS
-    int baseNonce = 0;
     bool matches = false;
 
-    for (int i = baseNonce; i < (baseNonce + 1000000000); i++) {
+    for (int i = baseNonce; i < (baseNonce + 100000); i++) {
         computeHash(data, hash, i);
 
         bool leadingZeros = true;

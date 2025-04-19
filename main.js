@@ -47,11 +47,13 @@ async function initShaderProgram() {
     return program;
 }
 
-function setUniforms(program, data, difficulty) {
+function setUniforms(program, data, difficulty, baseNonce) {
     const dataLoc = gl.getUniformLocation(program, 'data');
     const difficultyLoc = gl.getUniformLocation(program, 'difficulty');
+    const baseNonceLoc = gl.getUniformLocation(program, 'baseNonce');
     gl.uniform1uiv(dataLoc, data);
-    gl.uniform1ui(difficultyLoc, difficulty)
+    gl.uniform1ui(difficultyLoc, difficulty);
+    gl.uniform1i(baseNonceLoc, baseNonce);
 }
 
 function setupGeometry(program) {
@@ -71,7 +73,7 @@ function setupGeometry(program) {
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 }
 
-async function render(program, data, difficulty) {
+async function render(program, data, difficulty, baseNonce) {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -91,7 +93,7 @@ async function render(program, data, difficulty) {
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
 
     gl.useProgram(program);
-    setUniforms(program, data, difficulty);
+    setUniforms(program, data, difficulty, baseNonce);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.flush();
 
@@ -140,8 +142,16 @@ async function run(inputData, difficulty) {
         dataWords[i] = dataView.getUint32(i * 4, false);
     }
 
-    const result = await render(program, dataWords, difficulty);
-    let hash0Hex = uint32hex(result.hash0)
+    let result = null;
+    // use baseNonce to calculate in smaller batches to avoid full window hangs or GPU timeouts
+    for (let i = 0; i < 200; i++) {
+        const baseNonce = i * 100000;
+        result = await render(program, dataWords, difficulty, baseNonce);
+        if (result.nonce != -1) {
+            break;
+        }
+    }
+    let hash0Hex = uint32hex(result.hash0);
 
     if (result.nonce >= 0) {
         const dataWithNonce = new Uint8Array(data.length + 4);
