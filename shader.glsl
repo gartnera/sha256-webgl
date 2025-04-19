@@ -85,11 +85,22 @@ void computeHash(uint messageData[16], out uint result[8], int messageNonce) {
 }
 
 void main() {
+    // Get the pixel coordinates
+    ivec2 pixelCoord = ivec2(gl_FragCoord.xy);
+    
+    // Calculate unique nonce range for this pixel
+    // Each pixel will process 10 nonces
+    int noncesPerPixel = 10;
+    int pixelOffset = (pixelCoord.y * int(gl_FragCoord.w) + pixelCoord.x) * noncesPerPixel;
+    int startNonce = baseNonce + pixelOffset;
+    int endNonce = startNonce + noncesPerPixel;
+
     uint hash[8];
     nonce = -1;
     bool matches = false;
 
-    for (int i = baseNonce; i < (baseNonce + 100000); i++) {
+    // Process this pixel's range of nonces
+    for (int i = startNonce; i < endNonce; i++) {
         computeHash(data, hash, i);
 
         bool leadingZeros = true;

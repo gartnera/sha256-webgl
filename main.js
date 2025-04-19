@@ -5,6 +5,11 @@ if (!gl) {
     throw new Error('WebGL 2.0 not supported');
 }
 
+const GRID_SIZE = 32;
+// WARN: increasing this value beyond 1000 is unstable on macOS safari
+// WARN: increasing this value beyond 10 is unstable on iOS safari
+const NONCES_PER_PIXEL = 10;
+
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -74,43 +79,89 @@ function setupGeometry(program) {
 }
 
 async function render(program, data, difficulty, baseNonce) {
-    canvas.width = 1;
-    canvas.height = 1;
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    // Set up grid for parallel processing
+    canvas.width = GRID_SIZE;
+    canvas.height = GRID_SIZE;
+    gl.viewport(0, 0, GRID_SIZE, GRID_SIZE);
 
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
 
+    // Create texture for nonce results (one per pixel)
     const nonceTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, nonceTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32I, 1, 1, 0, gl.RED_INTEGER, gl.INT, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32I, GRID_SIZE, GRID_SIZE, 0, gl.RED_INTEGER, gl.INT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, nonceTexture, 0);
 
+    // Create texture for hash results (one per pixel)
     const hash0Texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, hash0Texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, GRID_SIZE, GRID_SIZE, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, hash0Texture, 0);
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
 
+    // Create color texture for visualization
+    const colorTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, colorTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, GRID_SIZE, GRID_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorTexture, 0);
+
+    // Enable all color attachments
+    gl.drawBuffers([
+        gl.COLOR_ATTACHMENT0,
+        gl.COLOR_ATTACHMENT1,
+        gl.COLOR_ATTACHMENT2
+    ]);
+
+    // Check framebuffer status
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error(`Framebuffer is not complete. Status: ${status}`);
+    }
+
+    // Run the shader
     gl.useProgram(program);
     setUniforms(program, data, difficulty, baseNonce);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.flush();
 
-    const nonce = new Int32Array(1);
+    // Read results from all pixels
+    const nonces = new Int32Array(GRID_SIZE * GRID_SIZE);
     gl.readBuffer(gl.COLOR_ATTACHMENT1);
-    gl.readPixels(0, 0, 1, 1, gl.RED_INTEGER, gl.INT, nonce);
+    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RED_INTEGER, gl.INT, nonces);
 
-    const hash0 = new Uint32Array(1);
+    const hashes = new Uint32Array(GRID_SIZE * GRID_SIZE);
     gl.readBuffer(gl.COLOR_ATTACHMENT2);
-    gl.readPixels(0, 0, 1, 1, gl.RED_INTEGER, gl.UNSIGNED_INT, hash0);
+    gl.readPixels(0, 0, GRID_SIZE, GRID_SIZE, gl.RED_INTEGER, gl.UNSIGNED_INT, hashes);
 
+    // Find the first successful result
+    let foundNonce = -1;
+    let foundHash = 0;
+    for (let i = 0; i < nonces.length; i++) {
+        if (nonces[i] !== -1) {
+            foundNonce = nonces[i];
+            foundHash = hashes[i];
+            break;
+        }
+    }
+
+    // Cleanup
     gl.deleteFramebuffer(fb);
     gl.deleteTexture(nonceTexture);
     gl.deleteTexture(hash0Texture);
+    gl.deleteTexture(colorTexture);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    return { nonce: nonce[0], hash0: hash0[0] };
+    return {
+        nonce: foundNonce,
+        hash0: foundHash,
+        totalProcessed: GRID_SIZE * GRID_SIZE * NONCES_PER_PIXEL,
+    };
 }
 
 function uint32hex(number) {
@@ -143,9 +194,9 @@ async function run(inputData, difficulty) {
     }
 
     let result = null;
-    // use baseNonce to calculate in smaller batches to avoid full window hangs or GPU timeouts
-    for (let i = 0; i < 200; i++) {
-        const baseNonce = i * 100000;
+    const noncesPerFrame = GRID_SIZE * GRID_SIZE * NONCES_PER_PIXEL;
+    for (let i = 0; i < 1000; i++) {
+        const baseNonce = i * noncesPerFrame;
         result = await render(program, dataWords, difficulty, baseNonce);
         if (result.nonce != -1) {
             break;
@@ -167,7 +218,7 @@ async function run(inputData, difficulty) {
             throw new Error(`Hash mismatch: GPU hash0 ${hash0Hex} !== CPU hash0 ${cpuHash0Hex}`);
         }
         const endTime = performance.now();
-    
+
         return {
             inputHash: Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''),
             hash: hashHexString,
