@@ -207,7 +207,7 @@ async function run(inputData, difficulty) {
 
     let result = null;
     const noncesPerFrame = GRID_SIZE * GRID_SIZE * NONCES_PER_PIXEL;
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < 100000; i++) {
         const baseNonce = i * noncesPerFrame;
         result = await render(program, dataWords, difficulty, baseNonce);
         if (result.nonce != -1) {
@@ -215,6 +215,7 @@ async function run(inputData, difficulty) {
         }
     }
     let hash0Hex = uint32hex(result.hash0);
+    let inputHash = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join('');
 
     if (result.nonce >= 0) {
         const dataWithNonce = new Uint8Array(data.length + 4);
@@ -232,13 +233,14 @@ async function run(inputData, difficulty) {
         const endTime = performance.now();
 
         return {
-            inputHash: Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(''),
+            inputHash: inputHash,
             hash: hashHexString,
             nonce: result.nonce,
             duration: startTime - endTime,
         }
     } else {
         return {
+            inputHash: inputHash,
             nonce: result.nonce,
         }
     }
@@ -256,6 +258,10 @@ function setRandomInput() {
 }
 
 async function handleCalculateClick(ev) {
+    inputHashEl.value = "";
+    finalHashEl.value = "";
+    nonceEl.value = "";
+
     document.querySelectorAll("button").forEach((btn) => btn.disabled = true);
     const inputData = inputDataEl.value;
     const difficulty = parseInt(difficultyEl.value);
@@ -263,8 +269,10 @@ async function handleCalculateClick(ev) {
     try {
         const res = await run(inputData, difficulty);
         inputHashEl.value = res.inputHash;
-        finalHashEl.value = res.hash;
-        nonceEl.value = res.nonce;
+        if (res.nonce > 0) {
+            finalHashEl.value = res.hash;
+            nonceEl.value = res.nonce;
+        }
     } catch (e) {
         errorEl.style.display = "block";
         errorEl.innerText = e;
